@@ -3,7 +3,7 @@ expected by account status, and duration-weighted VIF for the M2 covariates.
 
 Part of the superseded 9 Oct 2026 pilot test fit (replaced by ../../aft_model/); kept for the record.
 Inputs: ../exact.parquet, exact_fits.pkl (fit_exact.py). Output: quick_exact.pkl next to this script (interval
-tables per model, KS_M2, vif, r_M2) and printed tables. Run from checks/: python quick_exact.py."""
+tables per model, KS_M2, vif, r_M2) and printed tables. Run from checks/: python calibration_exact.py."""
 import pickle
 from common_exact import *
 from scipy import stats
@@ -42,7 +42,7 @@ st = acc.account_status.reindex(r.index)
 for g in ['suspended', 'active']:
     m = (st == g).to_numpy(); print(g, 'O', evr[m].sum(), 'E', r[m].sum().round(1), 'O/E', (evr[m].sum() / r[m].sum()).round(3))
 # VIF duration-weighted
-# (as in ../fit.py: diagonal of the inverse of the episode-length-weighted correlation matrix)
+# (as in ../fit_daily.py: diagonal of the inverse of the episode-length-weighted correlation matrix)
 w = (ex.stop - ex.start).to_numpy(); X = ex[COVS2].to_numpy(float)
 mu_ = (w[:, None] * X).sum(0) / w.sum(); Xc = X - mu_; cv = (w[:, None] * Xc).T @ Xc / w.sum(); sd = np.sqrt(np.diag(cv))
 vif = pd.Series(np.diag(np.linalg.inv(cv / np.outer(sd, sd))), index=COVS2).sort_values(ascending=False)

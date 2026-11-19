@@ -7,7 +7,7 @@ Model (Cox & Oakes 1984, ch. 6; Robins & Tsiatis 1992): each subject's covariate
 
 and S(t | x(.)) = S0(Psi(t)). While a subject has covariate value x its clock runs at exp(-x . beta) times baseline speed,
 so exp(beta_k) is a time ratio: > 1 slows the event down, < 1 speeds it up. With constant covariates this is the ordinary
-AFT model log T = x . beta + log U, U ~ S0. TV_AFT_validation.ipynb checks it against lifelines and R eha::aftreg
+AFT model log T = x . beta + log U, U ~ S0. tvaft_validation.ipynb checks it against lifelines and R eha::aftreg
 (exact with constant covariates). With time-varying covariates eha 2.12.0's event-density term uses the current-covariate
 scaled time instead of the accumulated clock, so its density does not integrate to 1; with that one term patched, eha
 matches this implementation exactly.
@@ -29,7 +29,7 @@ Library module, reads and writes no files. Use:
     from tvaft import TimeVaryingAFT
     m = TimeVaryingAFT('weibull').fit(episodes, subjects, covariates, robust=True)
     m.summary         # coef, se, time_ratio = exp(coef), 95% CI, p; one row per covariate plus baseline parameters
-Callers: aft_model/fit_*.py, aft_model/truncation.py, TV_AFT_validation.ipynb (with tvaft_simulation.py and
+Callers: aft_model/fit_*.py, aft_model/truncation.py, tvaft_validation.ipynb (with tvaft_simulation.py and
 tvaft_eha_check.R).
 """
 import autograd.numpy as anp

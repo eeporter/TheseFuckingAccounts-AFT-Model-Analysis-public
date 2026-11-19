@@ -5,10 +5,10 @@ For each account and kind ('threads' = posts + comments by thread, 'posts' = own
 number of active threads in the account's busiest subreddit (the numerator of flooding) and summarises it, with medians
 weighted by how long each value lasts.
 Inputs: the setup of build_exact.py (exec'd: data, censoring, thread_active). Output: busiest.parquet next to this
-script and printed percentiles. Run: python busiest.py."""
+script and printed percentiles. Run: python busiest_subreddit_threads.py."""
 import os, numpy as np, pandas as pd
 D=os.path.dirname(os.path.abspath(__file__))  # busiest threads per 7 days in one subreddit (flooding cut-off, 2026-10-15)
-# exec build_exact.py up to its episode loop; __file__ is swapped so its HERE points at this folder's build.py
+# exec build_exact.py up to its episode loop; __file__ is swapped so its HERE points at this folder's build_daily.py
 src=open(os.path.join(D,'build_exact.py')).read().split('t0c = time.time()')[0]
 _me=__file__; __file__=os.path.join(D,'build_exact.py'); exec(src); __file__=_me
 def wmed(v,w):

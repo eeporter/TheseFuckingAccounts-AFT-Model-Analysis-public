@@ -3,8 +3,8 @@
 Part of the superseded 9 Oct 2026 pilot test fit (replaced by ../aft_model/); kept for the record.
 Counts enter as log(1 + count); start year enters as indicators (2015 or earlier pooled, 2020 = reference). Every
 account was accused, so all subjects have event = 1 (no censoring in the daily data). Robust (account-clustered) SEs.
-Inputs: daily.parquet (from build.py), sample_accounts.parquet. Outputs: vif.csv and summary_<dist>.csv next to this
-script (coefficients; time_ratio = exp(coef)). Run: python fit.py. plots.py execs the setup part of this file (up to
+Inputs: daily.parquet (from build_daily.py), sample_accounts.parquet. Outputs: vif.csv and summary_<dist>.csv next to this
+script (coefficients; time_ratio = exp(coef)). Run: python fit_daily.py. plots.py execs the setup part of this file (up to
 the baseline loop)."""
 import os, sys, time
 import numpy as np

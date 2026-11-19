@@ -8,7 +8,7 @@ to overwrite an existing output.
 |---|---|
 | `rules.py` | flooding (10+ threads), visual media by whether it rendered, accounts dropped for a capped archive |
 | `build.py` | exact-time covariates for the 9 Oct variable subset with the rules → `exact_v1.parquet` (991 accounts) |
-| `fit_v1.py` | Weibull refit on `exact_v1` and on the 9 Oct build for the same 991 accounts → `fit_v1.pkl`, `fit_v1_compare.csv` |
+| `refit_test_model_decided_rules.py` | Weibull refit on `exact_v1` and on the 9 Oct build for the same 991 accounts → `fit_v1.pkl`, `fit_v1_compare.csv` |
 | `checks/visual_rule_counts.py` | pilot link counts under the old host rule vs the render rule |
 | `links.py` | link table for any posts/comments, same as `link_domain_types_v1` (reproduces its pre-accusation table exactly) |
 | `build.py --to-cutoff` | continues each account past its accusation to 2022-11-30 with archived behaviour → `exact_v1_to_cutoff.parquet` (rows before the accusation identical to `exact_v1`) |

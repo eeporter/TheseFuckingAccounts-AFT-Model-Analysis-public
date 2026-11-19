@@ -1,7 +1,7 @@
 """Refit the 9 Oct test model (Weibull, exact time, 'has any' indicators) on exact_v1 (decided rules) and, for
 comparison, the 9 Oct build on the same accounts. Writes aft_model_output/fit_v1.pkl and fit_v1_compare.csv.
 
-Run: python fit_v1.py (no arguments; the two fits run in parallel). Inputs: aft_model_output/exact_v1.parquet,
+Run: python refit_test_model_decided_rules.py (no arguments; the two fits run in parallel). Inputs: aft_model_output/exact_v1.parquet,
 aft_pilot_test_output/exact.parquet (the 9 Oct build) and sample_998_v4_excl_output/sample_accounts.parquet.
 Uses fit(), COUNTS, REF and S from aft_pilot_test/checks/common.py. No truncation correction; every row of the build is
 fitted as read (no filter on an 'after' column). The pickle is a list of two result dicts; the csv has coef and SE from each

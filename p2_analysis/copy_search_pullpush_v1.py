@@ -54,7 +54,7 @@ def search(row):
 
 def main():
     os.makedirs(PARTS, exist_ok=True)
-    # The search list from copy_search_prep_v1.py, joined back to each comment's original text.
+    # The search list from copy_search_pullpush_prep_v1.py, joined back to each comment's original text.
     todo = pd.read_parquet(os.path.join(OUT, 'search_list_v1.parquet'))
     comments = pd.read_parquet(os.path.join(HERE, 'sample_998_v4_excl_output', 'sample_comments.parquet'),
                                columns=['id', 'outer_key', 'body']).drop_duplicates(['outer_key', 'id'])

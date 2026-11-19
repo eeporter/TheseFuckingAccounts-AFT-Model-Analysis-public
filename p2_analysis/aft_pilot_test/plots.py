@@ -1,11 +1,11 @@
 """Fit diagnostics for the AFT test run: Cox-Snell residuals, baseline QQ, time-ratio forest plot, TFA control.
 
 Part of the superseded 9 Oct 2026 pilot test fit (replaced by ../aft_model/); kept for the record.
-Refits the four baselines on the episodes built by fit.py (its setup is exec'd) and draws five figures, plus a
+Refits the four baselines on the episodes built by fit_daily.py (its setup is exec'd) and draws five figures, plus a
 start-year plot of the raw times.
-Inputs: daily.parquet, summary_weibull.csv (from fit.py), sample accounts, the TFA submissions CSV.
+Inputs: daily.parquet, summary_weibull.csv (from fit_daily.py), sample accounts, the TFA submissions CSV.
 Outputs: 1_cox_snell.png .. 5_time_by_start_year.png in p2_figures/aft_test_run_2026-10-09/ of the main checkout.
-Run: python plots.py (after fit.py)."""
+Run: python plots.py (after fit_daily.py)."""
 import os, sys
 import numpy as np
 import pandas as pd
@@ -21,8 +21,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FIG = '/home/eeporter/Dissertation/Reddit_project2_notebooks/p2_figures/aft_test_run_2026-10-09'
 os.makedirs(FIG, exist_ok=True)
 
-# rebuild the episodes exactly as fit.py does
-src = open(os.path.join(HERE, 'fit.py')).read().split('res = {}')[0]
+# rebuild the episodes exactly as fit_daily.py does
+src = open(os.path.join(HERE, 'fit_daily.py')).read().split('res = {}')[0]
 exec(src)
 
 DISTS = ['weibull', 'lognormal', 'loglogistic', 'gengamma']
@@ -65,7 +65,7 @@ axes[0].set_ylabel('fitted probability')
 fig.suptitle('Probability plot of the fitted model — points on the dashed line = good fit', y=1.02)
 fig.tight_layout(); fig.savefig(os.path.join(FIG, '2_probability_plot.png'), dpi=130, bbox_inches='tight'); plt.close(fig)
 
-# 3. Forest plot of time ratios (Weibull, robust SEs from fit.py)
+# 3. Forest plot of time ratios (Weibull, robust SEs from fit_daily.py)
 s = pd.read_csv(os.path.join(HERE, 'summary_weibull.csv'), index_col=0).loc[COVS]
 s = s.iloc[::-1]
 fig, ax = plt.subplots(figsize=(8, 11))

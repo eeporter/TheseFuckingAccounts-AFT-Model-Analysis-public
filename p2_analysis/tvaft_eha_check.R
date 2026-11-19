@@ -2,7 +2,7 @@
 # linked by `id`. With constant covariates the two agree exactly. With time-varying covariates eha 2.12.0's event term
 # uses (gamma - 1) * (log(t) - alpha + z.beta), the current-covariate scaled time, instead of (gamma - 1) * log(clock),
 # so its density does not integrate to 1. eha_aftreg_tv_fix.patch changes that one term; set EHA_LIB to a library
-# holding the patched build to use it (TV_AFT_validation.ipynb builds one in a temporary directory).
+# holding the patched build to use it (tvaft_validation.ipynb builds one in a temporary directory).
 # Usage: Rscript tvaft_eha_check.R <episodes.csv> <subjects.csv> <dist> <out.csv>
 #   episodes.csv: id, start, stop, covariates...   subjects.csv: id, event[, entry]
 # Writes one row per parameter: term, coef, se, loglik. Coefficients use param = "lifeExp" (exp(coef) = time ratio,

@@ -53,7 +53,7 @@ v1–v3). Time zero = first recorded (archived) activity, not account creation. 
 - [ ] **Flooding definition** — decided 2026-10-15 (user): flooding needs **10+ threads in the busiest subreddit within the
       last 7 days**; the value is then the busiest subreddit's share of the window's threads, 0 otherwise (replaces the
       2+ threads trial). Pilot: 135/998 accounts ever reach 10 threads in one subreddit in a week (85 counting posts only;
-      128 of the 991 kept); typical active week median 1, busiest week median 2. Refit 2026-10-15 (`aft_model/fit_v1.py`,
+      128 of the 991 kept); typical active week median 1, busiest week median 2. Refit 2026-10-15 (`aft_model/refit_test_model_decided_rules.py`,
       9 Oct variables): flooding time ratio 0.73 (2+ rule) → 1.17, SE 0.21 → 0.36, not significant; other estimates
       moved ≤ 0.4 SE. Recheck the count and the cut-off on the larger sample.
 - [ ] **Exact-time covariates** (trial 2026-10-09): values change at each item's time and 7 days later instead of daily;

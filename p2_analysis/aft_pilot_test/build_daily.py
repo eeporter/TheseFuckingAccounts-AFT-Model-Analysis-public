@@ -7,7 +7,7 @@ covers the previous 7 days (days d-7 .. d-1), so covariates are lagged by one da
 Inputs: sample_998_v4_excl_output/ (accounts, posts, comments), subreddit_groups_v9.parquet, crosspost flags,
 replies on own posts (replies_output/posts_parts/), and the TFA submissions CSV (calendar control).
 Output: daily.parquet next to this script (id, start, stop, covariate columns).
-Run: python build.py. build_exact.py execs the data-loading part of this file (everything above the group list), so
+Run: python build_daily.py. build_exact.py execs the data-loading part of this file (everything above the group list), so
 keep that part free of side effects beyond loading."""
 import os, re, glob, time
 import numpy as np

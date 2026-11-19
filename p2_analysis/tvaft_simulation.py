@@ -1,4 +1,4 @@
-"""Simulated accounts with known time ratios, for validating tvaft.TimeVaryingAFT (used by TV_AFT_validation.ipynb).
+"""Simulated accounts with known time ratios, for validating tvaft.TimeVaryingAFT (used by tvaft_validation.ipynb).
 
 Three covariates, Weibull baseline shaped like the TFA data (shape ~0.45):
     x1  fixed trait, standard normal                                   true time ratio 0.70

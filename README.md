@@ -66,9 +66,10 @@ overwrite an output that already exists.
 - **Model:**
   - `tvaft.py`: the time-varying AFT fitter (Weibull, log-normal, log-logistic, generalised gamma; delayed entry;
     robust SEs).
-  - `tvaft_simulation.py`, `TV_AFT_validation.ipynb`, `tvaft_eha_check.R`, `eha_aftreg_tv_fix.patch`: its
+  - `tvaft_simulation.py`, `tvaft_validation.ipynb`, `tvaft_eha_check.R`, `eha_aftreg_tv_fix.patch`: its
     validation against lifelines and R `eha`, and Monte Carlo recovery.
-  - `aft_pilot_test/`: the first pilot fit.
+  - `aft_pilot_test/`: the first pilot fit (daily grid: `build_daily.py`, `fit_daily.py`; exact-time: `build_exact.py`,
+    `checks/`).
   - `aft_model/`: the decided rules, the covariate build and every fit (see `aft_model/README.md`).
   - `AFT_pilot_to_full_sample_checklist.md`: what changes between the pilot and the full sample.
 - **Copy search:** `copy_search_*` and `lsh_copy_search/`. The exact shingle/Jaccard search for earlier copies of

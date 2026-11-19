@@ -4,7 +4,7 @@ Part of the superseded 9 Oct 2026 pilot test fit (replaced by ../../aft_model/);
 Prints: failed and non-converged tasks; LR tests for the covariate x log t interactions (all at once, then one at a
 time with Holm-adjusted p); functional-form LR tests; the status-split LR test; the simulated KS distribution.
 Inputs (relative paths): exact_diag.pkl, exact_fits.pkl, quick_exact.pkl. Output: printed only.
-Run from checks/: python summ_exact.py."""
+Run from checks/: python summarise_exact_checks.py."""
 import pickle, numpy as np, pandas as pd
 from scipy import stats
 from statsmodels.stats.multitest import multipletests

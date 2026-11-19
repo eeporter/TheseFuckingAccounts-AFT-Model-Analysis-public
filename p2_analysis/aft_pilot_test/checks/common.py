@@ -1,4 +1,4 @@
-"""Shared setup for the test-run checks: the same covariates and episodes as ../fit.py.
+"""Shared setup for the test-run checks: the same covariates and episodes as ../fit_daily.py.
 
 Part of the superseded 9 Oct 2026 pilot test fit (replaced by ../../aft_model/); kept for the record.
 Imported with `from common import *` by the daily-model checks (and, through common_exact.py, the exact-time ones).
@@ -25,7 +25,7 @@ TRUNCATED = sorted(_acc.index[_acc.history_truncated.fillna(False).astype(bool)]
 
 
 def load():
-    """Daily data with the model covariates, as in ../fit.py.
+    """Daily data with the model covariates, as in ../fit_daily.py.
 
     Counts become log(1 + count) (raw TFA count kept as raw_tfa), plus username_digits and start-year indicators
     (2015 or earlier pooled, 2020 = reference). Returns (daily DataFrame, accounts DataFrame, list of covariate names)."""

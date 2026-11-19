@@ -1,20 +1,20 @@
 """Exact-time build: covariates change at the moment of each action (and when it leaves the 7-day window), not on a
 daily grid with a 1-day lag. Flooding needs 2+ threads. Accounts whose capped archive ends before the accusation are
-censored at the archive end. Data loading is shared with build.py.
+censored at the archive end. Data loading is shared with build_daily.py.
 
 Part of the superseded 9 Oct 2026 pilot test fit (replaced by ../aft_model/); kept for the record. The 2+ flooding rule
-here is the trial rule; the cut-off was later set to 10+ threads (see busiest.py and the README).
-Inputs: the same files as build.py (its loading code is exec'd), plus sample_posts/comments for the archive ends.
+here is the trial rule; the cut-off was later set to 10+ threads (see busiest_subreddit_threads.py and the README).
+Inputs: the same files as build_daily.py (its loading code is exec'd), plus sample_posts/comments for the archive ends.
 Output: exact.parquet next to this script, one row per episode (id, start, stop, event, covariates); covariates are
 constant within an episode and event = 1 only on an accused account's last episode.
-Run: python build_exact.py. busiest.py execs the top of this file (setup and the two window functions)."""
+Run: python build_exact.py. busiest_subreddit_threads.py execs the top of this file (setup and the two window functions)."""
 import os, time
 import numpy as np
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# run build.py's loading and flagging code, stopping before its daily-grid build
-src = open(os.path.join(HERE, 'build.py')).read().split("GROUPS = ['profile'")[0]
+# run build_daily.py's loading and flagging code, stopping before its daily-grid build
+src = open(os.path.join(HERE, 'build_daily.py')).read().split("GROUPS = ['profile'")[0]
 exec(src)                                   # acc, groups, posts, coms (pre-accusation, flagged), rep, tfa, DAY, WIN
 GROUPS = ['profile', 'adult', 'crypto', 'politics', 'karma_farming', 'general', 'news', 'sales', 'location', 'entertainment', 'other']
 a_full = pd.read_parquet(os.path.join(S, 'sample_accounts.parquet')).set_index('username_key')

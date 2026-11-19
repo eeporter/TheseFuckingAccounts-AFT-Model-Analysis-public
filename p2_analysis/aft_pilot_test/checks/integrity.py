@@ -64,7 +64,7 @@ active = daily[(daily.filter(like='thr_').sum(1) > 0)]
 samp = active.sample(300, random_state=3)
 mism = {k: 0 for k in ['thr_total', 'down_posts', 'down_comments', 'popular_posts', 'has_posted', 'visual_posts_lower_bound']}
 for r in samp.itertuples():
-    # items in the 7 days before the account-day (the same 1-day-lagged window as build.py)
+    # items in the 7 days before the account-day (the same 1-day-lagged window as build_daily.py)
     p = posts[(posts.outer_key == r.id) & (posts.day >= r.start - 7) & (posts.day < r.start)]
     c = coms[(coms.outer_key == r.id) & (coms.day >= r.start - 7) & (coms.day < r.start)]
     thr = set(p.id) | set(c.link_id.str.removeprefix('t3_'))

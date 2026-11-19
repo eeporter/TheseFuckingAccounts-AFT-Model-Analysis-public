@@ -5,7 +5,7 @@ Tasks: tv (x * (log(1 + t) - log 8) per covariate and all at once), ff (x^2 and 
 fits for suspended and active accounts), sim (parametric bootstrap of the censoring-aware KS statistic), boot
 (account-level nonparametric bootstrap of the coefficients). All start from the M2_exact_any estimates.
 Inputs: ../exact.parquet, exact_fits.pkl (fit_exact.py). Output: exact_diag.pkl next to this script.
-Run from checks/: python parallel_exact.py <n sim> <n boot> <workers>. bands_tv.py and summ_exact2.py import ks_cens
+Run from checks/: python parallel_exact.py <n sim> <n boot> <workers>. bands_tv.py and summarise_exact_bootstrap.py import ks_cens
 from here, which also runs the module-level setup below."""
 import pickle, time
 from multiprocessing import Pool

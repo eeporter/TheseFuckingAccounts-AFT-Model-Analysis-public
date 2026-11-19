@@ -3,7 +3,7 @@ an EARLIER (or same-second) post or comment by a DIFFERENT accused account have 
 
 Comparison set: the full stored Arctic Shift histories of all accused, not-deleted accounts (p2_data_cleaning/data/
 arctic_posts, arctic_comments; read file by file, de-duplicated on outer_key + id). Text is normalised as in
-copy_search_prep_v1.py (URLs and markdown quote lines removed, lower case, whitespace collapsed); posts use title +
+copy_search_pullpush_prep_v1.py (URLs and markdown quote lines removed, lower case, whitespace collapsed); posts use title +
 self-text. Only texts of 60+ characters count, so short generic lines ("thank you!") do not. Exact match on the
 normalised text. Writes shared_text_output/shared_text_flags_v1.parquet (one row per pilot item; never overwrites).
 """
