@@ -1,4 +1,9 @@
-"""Pilot counts of visual media and external links: host rule of the 9 Oct test build vs the render rule (rules.py)."""
+"""Pilot counts of visual media and external links: host rule of the 9 Oct test build vs the render rule (rules.py).
+
+Run: python checks/visual_rule_counts.py. Reads link_domain_output/links_pre_accusation_v1.parquet (one row per link
+before the accusation); prints a crosstab and the links / accounts that change class, writes nothing.
+Host rule = link_type 'visual' in the domain list; render rule = rules.link_renders.
+"""
 import os, sys
 import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -12,8 +17,8 @@ L['place'] = L['kind'] + ' ' + L['where']
 old_visual = L['link_type'].eq('visual')
 print('links', len(L))
 print(pd.crosstab([L['place'], L['link_type']], L['renders']).to_string())
-moved_out = old_visual & ~L['renders']
-moved_in = ~old_visual & L['renders']
+moved_out = old_visual & ~L['renders']          # visual under the host rule, not under the render rule
+moved_in = ~old_visual & L['renders']           # the reverse
 print(f"\nvisual under the host rule: {old_visual.sum()} links, {L[old_visual].outer_key.nunique()} accounts")
 print(f"visual under the render rule: {L['renders'].sum()} links, {L[L['renders']].outer_key.nunique()} accounts")
 print(f"no longer visual (now URL links): {moved_out.sum()} links, {L[moved_out].outer_key.nunique()} accounts;",

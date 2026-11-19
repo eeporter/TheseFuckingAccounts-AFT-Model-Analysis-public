@@ -1,9 +1,16 @@
+"""Exact-time refits of the pilot model: M1 (test-run covariates), M2 (M1 + 'has any' indicators), M1 without the 7
+censored accounts, and M2 with lognormal and generalized gamma baselines.
+
+Part of the superseded 9 Oct 2026 pilot test fit (replaced by ../../aft_model/); kept for the record.
+Inputs: ../exact.parquet via common_exact.load_exact(). Output: exact_fits.pkl next to this script, a list of dicts
+(summary, loglik, AIC, params, covariances; Cox-Snell residuals for M2_exact_any). Run from checks/: python fit_exact.py."""
 import pickle, time
 from multiprocessing import Pool
 from common_exact import *
 ex, acc, COVS, SUBJ = load_exact()
 COVS2 = COVS + [f'any_{c}' for c in ANY]
 ALL = list(SUBJ.index)
+# name -> (covariates, accounts, baseline)
 MODELS = {
     'M1_exact': (COVS, ALL, 'weibull'),
     'M2_exact_any': (COVS2, ALL, 'weibull'),
@@ -14,6 +21,7 @@ MODELS = {
 
 
 def one(name):
+    """Fit the model `name` from MODELS (robust SEs). Returns a dict of results for exact_fits.pkl."""
     covs, ids, dist = MODELS[name]
     e, s = sub(ex, SUBJ, ids)
     t = time.time()

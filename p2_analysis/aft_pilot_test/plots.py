@@ -1,4 +1,11 @@
-"""Fit diagnostics for the AFT test run: Cox-Snell residuals, baseline QQ, time-ratio forest plot, TFA control."""
+"""Fit diagnostics for the AFT test run: Cox-Snell residuals, baseline QQ, time-ratio forest plot, TFA control.
+
+Part of the superseded 9 Oct 2026 pilot test fit (replaced by ../aft_model/); kept for the record.
+Refits the four baselines on the episodes built by fit.py (its setup is exec'd) and draws five figures, plus a
+start-year plot of the raw times.
+Inputs: daily.parquet, summary_weibull.csv (from fit.py), sample accounts, the TFA submissions CSV.
+Outputs: 1_cox_snell.png .. 5_time_by_start_year.png in p2_figures/aft_test_run_2026-10-09/ of the main checkout.
+Run: python plots.py (after fit.py)."""
 import os, sys
 import numpy as np
 import pandas as pd
@@ -23,7 +30,8 @@ fits, resid = {}, {}
 for dist in DISTS:
     m = TimeVaryingAFT(dist).fit(ep, subjects, COVS)
     p = len(COVS)
-    beta, theta = m.params_[:p], m.params_[p:]
+    beta, theta = m.params_[:p], m.params_[p:]          # regression coefficients, baseline parameters
+    # each account's accumulated baseline clock Psi(T) = sum over episodes of exp(-x . beta) * duration
     psi = np.asarray(m._psi(np.exp(-m._X @ beta) * m._dur))
     _, logS = tvaft.baseline_logf_logS(dist, psi, theta)
     fits[dist], resid[dist] = m, -np.asarray(logS)      # Cox-Snell residual: Exp(1) if the model is right
@@ -45,6 +53,7 @@ fig.suptitle('Cox-Snell residuals — points on the dashed line = good fit', y=1
 fig.tight_layout(); fig.savefig(os.path.join(FIG, '1_cox_snell.png'), dpi=130, bbox_inches='tight'); plt.close(fig)
 
 # 2. QQ: fitted baseline clock vs its assumed distribution (log scale)
+# (u = 1 - S0(Psi(T)) is Uniform(0, 1) under the model, so this is a P-P plot with a KS test against the uniform)
 fig, axes = plt.subplots(1, 4, figsize=(16, 4.2))
 for ax, dist in zip(axes, DISTS):
     u = np.sort(1 - np.exp(-resid[dist]))                # fitted CDF value of each account's accumulated clock
@@ -61,6 +70,7 @@ s = pd.read_csv(os.path.join(HERE, 'summary_weibull.csv'), index_col=0).loc[COVS
 s = s.iloc[::-1]
 fig, ax = plt.subplots(figsize=(8, 11))
 y = np.arange(len(s))
+# red = CI wholly below 1 (accused sooner), blue = wholly above 1 (later), grey = CI covers 1
 col = np.where(s.upper95 < 1, 'tab:red', np.where(s.lower95 > 1, 'tab:blue', 'grey'))
 ax.errorbar(s.time_ratio, y, xerr=[s.time_ratio - s.lower95, s.upper95 - s.time_ratio], fmt='none', ecolor=col, lw=1.5)
 ax.scatter(s.time_ratio, y, c=col, zorder=3)
@@ -74,7 +84,7 @@ fig.tight_layout(); fig.savefig(os.path.join(FIG, '3_time_ratios.png'), dpi=130)
 tfa_t = pd.to_datetime(tfa_sorted := np.sort(pd.read_csv('/data/Emily_data/TheseFuckingAccounts_submissions.csv',
                        usecols=['created_utc']).created_utc.pipe(pd.to_numeric, errors='coerce').dropna().to_numpy()), unit='s')
 daily_n = pd.Series(1, index=tfa_t).resample('D').sum()
-roll = daily_n.rolling(30).sum()
+roll = daily_n.rolling(30).sum()                         # rolling 30-day TFA post count
 acc_dates = pd.to_datetime(acc['first_mention_adj_utc'], unit='s')
 fig, ax1 = plt.subplots(figsize=(12, 4.5))
 ax1.plot(roll.index, roll.values, color='tab:purple', lw=1)
@@ -97,6 +107,7 @@ ax.set_ylabel('days to first accusation (log)'); ax.set_xlabel('year of first ar
 ax.set_title('Time to accusation by start year (raw data)')
 fig.tight_layout(); fig.savefig(os.path.join(FIG, '5_time_by_start_year.png'), dpi=130); plt.close(fig)
 
+# tfa_posts_30d is on the log1p scale in ep, so expm1 recovers the raw count
 print('TFA 30-day count over pilot timelines:', ep.assign(n=np.expm1(ep.tfa_posts_30d)).n.describe().round(0).to_dict())
 print(d.groupby('start_year').days_to_accused.median().round(1).to_dict())
 print('saved to', FIG)

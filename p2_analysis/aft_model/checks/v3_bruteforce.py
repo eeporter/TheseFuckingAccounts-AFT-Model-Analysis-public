@@ -1,6 +1,15 @@
 """Independent check of the v3 window variables: recompute them naively from the raw pilot posts/comments/replies at
 random pre-accusation episodes and compare with exact_v3_to_cutoff.parquet. Written separately from features.py
-(definitions from its docstring). Usage: python checks/v3_bruteforce.py [n_accounts]"""
+(definitions from its docstring). Usage: python checks/v3_bruteforce.py [n_accounts]
+
+The code now reads exact_v9_to_cutoff.parquet and also checks the later variables (one burstiness over posts and
+thread entries, title / body length, return after silence, shared text). Inputs: sample_998_v4_excl_output
+(sample_accounts, sample_posts, sample_comments), replies_output/*_parts, parent_authors_output/parts and
+shared_text_output/shared_text_flags_v1.parquet. Draws n_accounts accounts (default 40, seed 19) and up to 25 of each
+one's pre-accusation episodes; the window of an episode is the 7 days up to its start, (start - 7, start] in days
+since first action. Raw values are compared before any log(1 + x) (except pace / hopping, which the build stores on
+the log scale). Prints the number of mismatches per variable with up to three examples; writes nothing.
+"""
 import os, sys, glob
 import numpy as np
 import pandas as pd
@@ -17,19 +26,24 @@ ids = rng.choice(ex.id.unique(), int(sys.argv[1]) if len(sys.argv) > 1 else 40, 
 P = pd.read_parquet(os.path.join(S, 'sample_posts.parquet'), columns=['id', 'outer_key', 'created_utc', 'title', 'selftext', 'is_self', 'edited'])
 C = pd.read_parquet(os.path.join(S, 'sample_comments.parquet'), columns=['id', 'outer_key', 'created_utc', 'subreddit', 'link_id', 'parent_id', 'body', 'edited'])
 P = P[P.outer_key.isin(ids)].drop_duplicates(['outer_key', 'id']); C = C[C.outer_key.isin(ids)].drop_duplicates(['outer_key', 'id'])
+# replies by other users to the sampled accounts' items (the account's own replies removed)
 R = pd.concat([pd.read_parquet(f) for f in glob.glob(os.path.join(P2, 'replies_output', '*_parts', '*.parquet'))])
 R = R[R.outer_key.isin(ids) & R.id.notna()].drop_duplicates(['outer_key', 'id'])
 R = R[R.author.fillna('').str.lower() != R.outer_key]
+# author of the item each comment replies to (parent_id -> author)
 PA = pd.concat([pd.read_parquet(f) for f in glob.glob(os.path.join(P2, 'parent_authors_output', 'parts', '*.parquet'))]).drop_duplicates('parent_id').set_index('parent_id').parent_author
 
 
 def med_gap(ts):
+    """log(1 + median gap in hours) between consecutive times (days); log(1 + 168) with fewer than 2 times"""
     ts = sorted(ts)
     g = [(b - a) * 24 for a, b in zip(ts, ts[1:])]
     return np.log1p(np.median(g)) if g else np.log1p(168.0)
 
 
 def kimjo(ts):
+    """finite-size burstiness A_n (Kim & Jo 2016, Eq. 22) of the gaps between times; 0 with fewer than 3 times or
+    no positive mean gap. r = CV of the gaps (population SD), capped at its maximum sqrt(n - 1)."""
     ts = sorted(ts)
     if len(ts) < 3:
         return 0.0
@@ -41,6 +55,7 @@ def kimjo(ts):
 
 
 def burst(ts):
+    """plain burstiness B = (sd - mean) / (sd + mean) of the gaps between times; 0 with fewer than 3 times"""
     ts = sorted(ts)
     if len(ts) < 3:
         return 0.0
@@ -53,8 +68,10 @@ SH = SH[SH.shared & SH.outer_key.isin(ids)]
 bad = {}
 for k in ids:
     a = acc.loc[k]; t0, T = a.first_action_utc, a.first_mention_adj_utc
+    # the account's items before the accusation, timed in days since first action
     p = P[(P.outer_key == k) & (P.created_utc < T)]; c = C[(C.outer_key == k) & (C.created_utc < T)]
     pt, ct = (p.created_utc - t0).to_numpy() / DAY, (c.created_utc - t0).to_numpy() / DAY
+    # text length: [removed] / [deleted] count as empty; a post's text is title + body
     ptxt = (p.title.fillna('') + ' ' + p.selftext.fillna('').where(~p.selftext.isin(['[removed]', '[deleted]']), '')).str.strip().str.len().to_numpy()
     ctxt = c.body.fillna('').where(~c.body.isin(['[removed]', '[deleted]']), '').str.len().to_numpy()
     r = R[(R.outer_key == k) & (R.created_utc < T)]
@@ -65,6 +82,8 @@ for k in ids:
     inter += [((x.created_utc - t0) / DAY, str(x.author).lower(), x.subreddit) for x in direct.itertuples()]
     inter = [i for i in inter if i[1] not in ('automoderator', '[deleted]', 'none', 'nan', '', k)]
     # alternating chains
+    # turns: a comment starts at 1; if it answers a reply whose parent is the account's own comment, it is that
+    # comment's turn + 1; if the reply's parent is the account's own post, it is 2
     rpar = dict(zip(r.id, r.parent_id))
     turns = {}
     for x in c.sort_values('created_utc').itertuples():
@@ -77,6 +96,7 @@ for k in ids:
                 n = 2
         turns[x.id] = n
     tv = np.array([turns[i] for i in c.id])
+    # thread entries: the account's first comment in a post, and any later one more than 7 days after its previous comment there
     entries = []
     for _, s in c.sort_values('created_utc').groupby('link_id'):
         last = None
@@ -95,6 +115,7 @@ for k in ids:
                'chars_posts': ptxt[inw(pt)].mean() if inw(pt).any() else 0.0,
                'chars_comments': ctxt[inw(ct)].mean() if inw(ct).any() else 0.0,
                'thread_turns': tv[inw(ct)].max() if inw(ct).any() else 0}
+        # return after silence: largest gap (days) before an item in the window to the previous item, first item 0
         allt = np.sort(np.r_[pt, ct]); gaps = np.r_[0.0, np.diff(allt)]
         tl = p.title.fillna('').str.len().to_numpy()
         isself = p.is_self.astype(str).eq('True').to_numpy()
@@ -105,17 +126,20 @@ for k in ids:
         exp['return_gap'] = gaps[inw(allt)].max() if inw(allt).any() else 0.0
         st = (SH.utc[(SH.outer_key == k) & (SH.utc < T)].to_numpy() - t0) / DAY
         exp['shared_text'] = int(inw(st).sum())
+        # hopping: gaps (hours) between consecutive window comments in one subreddit that are on different posts
         hop = []
         cw = c[inw(ct)].sort_values('created_utc')
         for _, s in cw.groupby('subreddit'):
             tt, th = (s.created_utc.to_numpy() - t0) / DAY, s.link_id.to_numpy()
             hop += [(tt[i] - tt[i - 1]) * 24 for i in range(1, len(tt)) if th[i] != th[i - 1]]
         exp['hopping'] = np.log1p(np.median(hop)) if hop else np.log1p(168.0)
+        # repeat partners: partners met 2+ times in the window
         cnt = {}
         for ti, who, _ in inter:
             if g - W < ti <= g:
                 cnt[who] = cnt.get(who, 0) + 1
         exp['repeat_partners'] = sum(v >= 2 for v in cnt.values())
+        # cross-subreddit partners: partners met in 2+ subreddits at any time up to the window's end (not only the window)
         subs = {}
         for ti, who, sb in inter:
             if ti <= g:

@@ -12,6 +12,13 @@
 In every corrected path has posted/commented keep their value at T, and the TFA control, start year, username digits
 and age bands follow the calendar / account as observed. Writes aft_model_output/fit_truncation_v2.pkl and a comparison
 table fit_truncation_v2_compare.csv (v1 was the first run, where the corrected fits other than 'typical' hit NaNs).
+
+Run: python fit_truncation.py (no job argument; fits all jobs above in parallel, the two uncorrected ones first so the
+corrected ones can start from them). Inputs: aft_model_output/exact_v1_to_cutoff.parquet and
+sample_998_v4_excl_output/sample_accounts.parquet. The pickle maps job -> fit (or {'name', 'error'} if it failed);
+corrected fits carry F_tau, each account's F(Psi(tau)). The csv has time ratios and SEs by job.
+Importing this module also loads aft_pilot_test/checks/common.py, which swaps tvaft's fallback optimiser; prep,
+covariates, path and the constants are reused by fit_horizon.py, fit_main.py and fit_full.py.
 """
 import os, sys, pickle, time
 for v in ['OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS']:
@@ -33,14 +40,22 @@ OUT = os.path.join(P2, 'aft_model_output')
 GROUPS = ['profile', 'adult', 'crypto', 'politics', 'karma_farming', 'general', 'news', 'sales', 'location', 'entertainment', 'other']
 COUNTS = [f'thr_{g}' for g in GROUPS] + ['links_external', 'visual_media', 'crossposts', 'nsfw_outside', 'edits',
           'down_posts', 'down_comments', 'popular_posts', 'popular_comments', 'replies_on_posts', 'tfa_posts_30d']
-ANY = ['visual_media', 'thr_entertainment', 'thr_crypto', 'replies_on_posts']
+ANY = ['visual_media', 'thr_entertainment', 'thr_crypto', 'replies_on_posts']   # the four counts with a 'has any' term
+# behaviour that a path after T replaces (not the TFA control, which follows the calendar)
 BEHAV = [c for c in COUNTS if c != 'tfa_posts_30d'] + ['flooding'] + [f'any_{c}' for c in ANY]
-EDGES = [1, 7, 30, 180, 365, 730]
+EDGES = [1, 7, 30, 180, 365, 730]                # age-band edges in days; under 1 day is the reference
 BANDS = [f'age_{a}_{b}' for a, b in zip(EDGES, EDGES[1:] + ['inf'])]
-REF = 2020
+REF = 2020                                       # reference start year
 
 
 def prep(ref=REF, source='exact_v1_to_cutoff.parquet'):
+    """Read the episodes and build the 9 Oct covariates.
+
+    source: episode parquet in aft_model_output; ref: not used here (the reference year is chosen in covariates()).
+    Adds 'has any' for ANY (from the raw counts), puts COUNTS on log(1 + x), username digits, start year (2014 and
+    earlier counted as 2015) with one indicator per year, the age bands by episode start, and fixes has posted /
+    commented after T at their value at T. Returns all episodes, pre- and after-accusation.
+    """
     ex = pd.read_parquet(os.path.join(OUT, source))
     acc = pd.read_parquet(os.path.join(S, 'sample_accounts.parquet')).set_index('username_key')
     for c in ANY:
@@ -63,12 +78,22 @@ def prep(ref=REF, source='exact_v1_to_cutoff.parquet'):
 
 
 def covariates(ex, ref, bands=False):
+    """9 Oct covariate names: log counts, flooding, has posted/commented, username digits, start years except ref
+    (one per year present in ex), the four 'has any' terms, and the age bands if bands. Constant columns are dropped
+    by the callers."""
     years = sorted(ex.start_year.unique())
     return (COUNTS + ['flooding', 'has_posted', 'has_commented', 'username_digits'] + [f'start_{y}' for y in years if y != ref]
             + [f'any_{c}' for c in ANY] + (BANDS if bands else []))
 
 
 def path(ex, how):
+    """Covariates on the after-T rows (after == 1) for the truncation correction.
+
+    how: 'observed' keeps the archived behaviour after the accusation; 'quiet' sets BEHAV to 0; 'typical' sets each
+    BEHAV column to the account's duration-weighted mean over its pre-T episodes (so an any-indicator becomes the share
+    of pre-T time with any). Other columns (TFA control, years, digits, bands, has posted/commented) are not touched.
+    Returns ex itself for 'observed', otherwise a copy.
+    """
     if how == 'observed':
         return ex
     ex = ex.copy()
@@ -83,12 +108,19 @@ def path(ex, how):
     return ex
 
 
+# job -> (after-T path, age bands, truncation-corrected)
 JOBS = {'none': ('none', False, False), 'observed': ('observed', False, True), 'typical': ('typical', False, True),
         'quiet': ('quiet', False, True), 'observed_bands': ('observed', True, True), 'early_none': ('none', False, False),
         'early_observed': ('observed', False, True), 'observed_no_has': ('observed', False, True)}
 
 
 def one(name, init=None):
+    """Fit one job.
+
+    name: key of JOBS; init: the uncorrected fit's result dict, used as start values for a corrected fit.
+    Returns a dict (name, summary, loglik, conv, n, params, cov, cov_model, secs, and F_tau if corrected), or
+    {'name', 'error'} if the fit raised, so one failure does not stop the pool.
+    """
     how, bands, corrected = JOBS[name]
     t = time.time()
     try:
@@ -96,7 +128,7 @@ def one(name, init=None):
         ref = REF
         if name.startswith('early'):
             ex = ex[ex.start_year <= 2018]; ref = 2018
-        covs = [c for c in covariates(ex, ref, bands) if ex.loc[ex.after == 0, c].std() > 0]
+        covs = [c for c in covariates(ex, ref, bands) if ex.loc[ex.after == 0, c].std() > 0]   # drop constant columns
         if name.endswith('no_has'):                   # diagnostic: without the has posted/commented indicators
             covs = [c for c in covs if c not in ('has_posted', 'has_commented')]
         subj = ex[ex.after == 0].groupby('id', sort=False)['event'].last().to_frame()
@@ -123,6 +155,7 @@ def one(name, init=None):
 if __name__ == '__main__':
     pkl = os.path.join(OUT, 'fit_truncation_v2.pkl')
     assert not os.path.exists(pkl), f'exists, not overwritten: {pkl}'
+    # stage 1: the uncorrected fits; stage 2: every other job, started from 'none' (or 'early_none' for early_*)
     plain = ['none', 'early_none']
     with Pool(len(plain)) as pool:
         res = {r['name']: r for r in pool.map(one, plain, chunksize=1)}
@@ -136,6 +169,7 @@ if __name__ == '__main__':
     tab = pd.concat([tr, se], axis=1)
     tab.to_csv(os.path.join(OUT, 'fit_truncation_v2_compare.csv'))
     print(tr.round(2).to_string())
+    # how strongly each corrected fit says the sample is truncated: F(tau) well below 1 means a large correction
     for k, r in ok.items():
         if 'F_tau' in r:
             print(k, 'accounts with F(tau) < 0.9:', int((r['F_tau'] < 0.9).sum()), 'median F(tau)', round(r['F_tau'].median(), 3))

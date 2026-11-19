@@ -4,7 +4,7 @@ Same variable subset as the 9 Oct test fit (aft_pilot_test/build_exact.py); the 
 they are built. Changes from the test build:
 - capped accounts are dropped (not censored): v1 dropped the 7 whose archive ends before the accusation; v2 (user,
   2026-10-16) drops all 11 capped accounts (rules.capped_accounts)
-- visual media / external links follow the render rule (rules.link_renders), using the link table from Link_domains_v1
+- visual media / external links follow the render rule (rules.link_renders), using the link table from link_domain_types_v1
 - flooding needs 10+ threads in the busiest subreddit (rules.flooding)
 - v3 (2026-10-19) adds the variables that were not yet built (features.py: #4, #5, #6b, #7, #10, #14-#18, replies on
   comments, and #19 removal for the extended model); the v2 columns are unchanged, only split at the new change points
@@ -18,13 +18,36 @@ they are built. Changes from the test build:
 - v8 (2026-10-22, user) adds one burstiness over posts and comment-thread entries together (features.burstiness_kimjo,
   Kim & Jo 2016 finite-size measure) and its event count n_burst_7d; the two v4 burstiness columns stay for comparison
 - v9 (2026-10-27, user) adds shared_text: posts and comments in the window whose text (60+ characters, normalised)
-  matches an earlier or same-second item by a different accused account (../shared_text_v1.py, all stored histories)
+  matches an earlier or same-second item by a different accused account (../shared_text_with_accused_accounts_v1.py, all stored histories)
 Covariates change at the moment of each action and when it leaves the 7-day window. Writes aft_model_output/.
 
 `python build.py --to-cutoff` continues every account past its accusation up to the sample cutoff (2022-11-30, pool
 rule 5) with its archived behaviour, for the right-truncation term; rows after the accusation have after = 1. Rows
 before the accusation are the same as in exact_<version>. After the accusation, subreddits outside the v9 groups count as
 'other', and replies are only those on posts made before the accusation (the only threads collected).
+
+Output: one row per episode [start, stop) per account, where the change points are 0, the accusation time T, every
+post / comment / edit / received reply time, each of those + 7 days (when it leaves the window), the end of each
+thread's activity + 7 days, and every whole day (for the daily TFA control). Times are days since the account's first
+archived action (first_action_utc). Columns: id (username_key), start, stop, event (1 on the episode ending at T),
+after (1 from T on, --to-cutoff only), then every covariate evaluated at start: window counts over (start - 7, start],
+"so far" flags/totals (has_posted, has_commented, has_edited, edit_delay, cross_sub_partners), and tfa_posts_30d.
+The run ends with an assert that every account has exactly one event.
+
+Reads (P2 = p2_analysis/):
+- sample_998_v4_excl_output/sample_{accounts,posts,comments}.parquet: the accused accounts and their posts/comments
+- subreddit_review_output/subreddit_groups_v9.parquet: subreddit -> group
+- crosspost_output/crosspost_flags_998.parquet: native crosspost flag per post
+- replies_output/{posts,comments}_parts/replies_*.parquet: other people's comments in the account's post threads and
+  direct replies to its comments
+- parent_text_output/parts, parent_authors_output/parts, comment_removal_output/parts: text and author of what each
+  comment replied to, and whether the comment shows as [removed] today
+- shared_text_output/shared_text_flags_v1.parquet: v9 shared_text flags
+- /data/Emily_data/TheseFuckingAccounts_submissions.csv: TFA submission times (control)
+Writes P2/aft_model_output/exact_<VERSION>.parquet, or exact_<VERSION>_to_cutoff.parquet with --to-cutoff; never
+overwrites an existing file (save_new). BUILD_LIMIT=N runs on the first N accounts and writes test_exact_*.parquet.
+
+Run: python build.py [--to-cutoff]      (optionally BUILD_LIMIT=N python build.py for a quick test)
 """
 import os, sys, glob, re, time
 import numpy as np
@@ -39,14 +62,15 @@ import features as F
 P2 = os.path.dirname(HERE)
 S = os.path.join(P2, 'sample_998_v4_excl_output')
 OUT = os.path.join(P2, 'aft_model_output')
-DAY = 86400.0
-WIN = 7
-CUTOFF = rules.CUTOFF
+DAY = 86400.0                               # seconds per day: created_utc (s) -> days
+WIN = 7                                     # window length, days
+CUTOFF = rules.CUTOFF                       # sample cutoff (epoch seconds), end of follow-up with --to-cutoff
 TO_CUTOFF = '--to-cutoff' in sys.argv
 GROUPS = ['profile', 'adult', 'crypto', 'politics', 'karma_farming', 'general', 'news', 'sales', 'location', 'entertainment', 'other']
 
 
 def save_new(df, name):
+    """Write df to OUT/name as zstd parquet; raise FileExistsError rather than overwrite an existing file."""
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, name)
     if os.path.exists(path):
@@ -55,6 +79,7 @@ def save_new(df, name):
     print(f'wrote {path}  {df.shape}', flush=True)
 
 
+# accused accounts and their archived posts and comments
 t0 = time.time()
 a_full = pd.read_parquet(os.path.join(S, 'sample_accounts.parquet')).set_index('username_key')
 posts_all = pd.read_parquet(os.path.join(S, 'sample_posts.parquet'), columns=[
@@ -73,6 +98,7 @@ if LIMIT:
     acc = acc.head(LIMIT)
 groups = pd.read_parquet(os.path.join(P2, 'subreddit_review_output', 'subreddit_groups_v9.parquet')).set_index('subreddit')['group']
 
+# keep items of the kept accounts made before the accusation (or before CUTOFF with --to-cutoff)
 posts = posts_all.drop_duplicates(['outer_key', 'id'])
 coms = coms_all.drop_duplicates(['outer_key', 'id'])
 posts, coms = posts[posts.outer_key.isin(acc.index)].copy(), coms[coms.outer_key.isin(acc.index)].copy()
@@ -83,16 +109,19 @@ for d in (posts, coms):
 posts = posts[posts.created_utc < posts.until].copy()
 coms = coms[coms.created_utc < coms.until].copy()
 
+# link table (links.py) and per-item visual media / external link flags (rules.item_link_flags)
 links = linkbuild.build(posts, coms)      # same as link_domain_output/links_pre_accusation_v1 on pre-accusation items
 posts['visual'], posts['external'] = rules.item_link_flags(links, posts, 'post', 'selftext')
 coms['visual'], coms['external'] = rules.item_link_flags(links, coms, 'comment', 'body')
 
+# crossposts: native crosspost flag, or "x-post"/"cross-post" in the title or first 500 characters of the text
 xp = pd.read_parquet(os.path.join(P2, 'crosspost_output', 'crosspost_flags_998.parquet'), columns=['id', 'outer_key', 'native_crosspost'])
 XPOST = re.compile(r'(?<![a-z])(x-?\s?post(?:ed)?|cross-?\s?post(?:ed)?)(?![a-z])', re.I)   # URLs stripped first
 posts['xtext'] = (posts.title.fillna('') + ' ' + posts.selftext.fillna('').str[:500]).str.replace(r'https?://\S+', ' ', regex=True)
 posts = posts.merge(xp, on=['id', 'outer_key'], how='left')
 posts['crosspost'] = posts.native_crosspost.fillna(False).astype(bool) | posts.xtext.str.contains(XPOST)
 
+# subreddit group and simple item flags
 posts['group'] = posts.subreddit.map(groups)
 coms['group'] = coms.subreddit.map(groups)
 for d in (posts, coms):
@@ -102,12 +131,12 @@ posts['nsfw_outside'] = posts.over_18.astype(str).eq('True') & ~posts.group.isin
 posts['score'] = pd.to_numeric(posts.score); coms['score'] = pd.to_numeric(coms.score)
 posts['down'] = posts.score.le(0); coms['down'] = coms.score.lt(0)
 posts['popular'] = posts.score.ge(100); coms['popular'] = coms.score.ge(100)
-posts['thread'] = posts['id']
+posts['thread'] = posts['id']                               # thread = the post id (bare)
 coms['thread'] = coms.link_id.str.removeprefix('t3_')
 for d in (posts, coms):
-    d['t'] = (d.created_utc - d.t0) / DAY
-    e = pd.to_numeric(d.edited.replace('False', np.nan), errors='coerce')
-    d['edit_t'] = np.where(e.notna() & (e < d['until']) & (e >= d.t0), (e - d.t0) / DAY, np.nan)
+    d['t'] = (d.created_utc - d.t0) / DAY                   # days since first archived action
+    e = pd.to_numeric(d.edited.replace('False', np.nan), errors='coerce')   # 'edited' holds the edit epoch or False
+    d['edit_t'] = np.where(e.notna() & (e < d['until']) & (e >= d.t0), (e - d.t0) / DAY, np.nan)   # NaN: no edit in period
 
 # dated replies received on own posts
 rep = pd.concat(pd.read_parquet(f, columns=['author', 'created_utc', 'source_id', 'outer_key'])
@@ -119,6 +148,7 @@ rep['t'] = (rep.created_utc - rep.outer_key.map(acc['first_action_utc'])) / DAY
 
 # --- v3 variables (features.py) ---
 def read_parts(pattern, **kw):
+    """Concatenate the non-empty parquet parts matching P2/pattern (sorted by file name)."""
     return pd.concat([d for d in (pd.read_parquet(f, **kw) for f in sorted(glob.glob(os.path.join(P2, pattern)))) if len(d)])
 
 
@@ -133,6 +163,7 @@ own_items = set('t3_' + posts.id) | set('t1_' + coms.id)
 others['to_account'] = others.parent_id.isin(own_items)     # a direct reply to one of the account's items
 rc = others[others.parent_id.fillna('').str.startswith('t1_') & others.to_account]   # replies on comments (#8b)
 
+# text, length (#15), self-repetition (#14), copied text (#18), thread turns (#5), promo links (#16), removal (#19)
 posts['text'] = F.post_text(posts); coms['text'] = F.comment_text(coms)
 posts['chars'] = posts.text.str.len(); coms['chars'] = coms.text.str.len()
 posts['self'] = posts.is_self.astype(str).eq('True')
@@ -142,13 +173,13 @@ items = pd.concat([posts[['outer_key', 'created_utc', 'text']], coms[['outer_key
 srep = F.self_repeats(items)
 posts['self_repeat'], coms['self_repeat'] = srep.loc['p'].to_numpy(), srep.loc['c'].to_numpy()
 print(f'self-repetition {time.time() - t0:.0f}s', flush=True)
-ptext = read_parts('parent_text_output/parts/*.parquet')
+ptext = read_parts('parent_text_output/parts/*.parquet')    # text and author of each comment's parent
 coms['copied'] = (F.copied_parent(coms, ptext) | F.copied_in_own_thread(coms, set(posts.id), others)).to_numpy()
 coms['turns'] = F.thread_turns(coms, posts, others).to_numpy()
 posts['promo_out'] = F.promo_out_of_place(links, posts, 'post')
 coms['promo_out'] = F.promo_out_of_place(links, coms, 'comment')
 posts['removed_mod'] = posts.removed_by_category.isin(['moderator', 'automod_filtered'])
-crem = read_parts('comment_removal_output/parts/*.parquet')
+crem = read_parts('comment_removal_output/parts/*.parquet')   # current status of each comment on Reddit
 crem = crem[crem.body_status.eq('removed')]
 coms['removed_now'] = pd.MultiIndex.from_arrays([coms.outer_key, coms.id]).isin(pd.MultiIndex.from_arrays([crem.outer_key, crem.id]))
 # interactions for #17: the author of what the account replied to, and everyone who replied to the account
@@ -159,6 +190,7 @@ inter = pd.concat([
                   'partner': others.author[others.to_account], 'sub': others.subreddit[others.to_account]})])
 inter['partner'] = inter.partner.fillna('').astype(str).str.lower()
 inter = inter[~inter.partner.isin(F.NOT_PARTNER) & (inter.partner != inter.outer_key)]
+# v9 shared text flags (computed by ../shared_text_with_accused_accounts_v1.py)
 shared = pd.read_parquet(os.path.join(P2, 'shared_text_output', 'shared_text_flags_v1.parquet'), columns=['kind', 'outer_key', 'id', 'shared'])
 for d, kind in ((posts, 'post'), (coms, 'comment')):
     s = shared[shared.kind.eq(kind) & shared.shared]
@@ -174,6 +206,7 @@ print(f'loaded {time.time() - t0:.0f}s', flush=True)
 def window(times, grid):
     """items with time in (a - WIN, a] at each grid point a"""
     s = np.sort(np.asarray(times, float))
+    # 'right' at both ends: an item at exactly a is in, one at exactly a - WIN has just left
     return np.searchsorted(s, grid, 'right') - np.searchsorted(s, grid - WIN, 'right')
 
 
@@ -183,36 +216,39 @@ def thread_active(td, grid):
         return np.zeros(len(grid), int)
     td = td.sort_values(['thread', 't'])
     th, t = td.thread.to_numpy(), td.t.to_numpy()
-    new_block = np.r_[True, (th[1:] != th[:-1]) | (np.diff(t) > WIN)]
+    new_block = np.r_[True, (th[1:] != th[:-1]) | (np.diff(t) > WIN)]   # items in one thread with no gap > WIN form a block
     bid = np.cumsum(new_block)
     s = pd.Series(t).groupby(bid).agg(['min', 'max'])
+    # a block is active on [first item, last item + WIN); blocks of one thread never overlap, so this counts threads
     starts, ends = np.sort(s['min'].to_numpy()), np.sort(s['max'].to_numpy() + WIN)
     return np.searchsorted(starts, grid, 'right') - np.searchsorted(ends, grid, 'right')
 
 
+# --- episodes: one block of rows per account ---
 rows = []
 pg, cg, rg = posts.groupby('outer_key'), coms.groupby('outer_key'), rep.groupby('outer_key')
 rcg, ig = rc.groupby('outer_key'), inter.groupby('outer_key')
 for k, a in acc.iterrows():
-    T = a.days_to_accused
-    end = (CUTOFF - a.first_action_utc) / DAY if TO_CUTOFF else T
+    T = a.days_to_accused                                   # event time, days
+    end = (CUTOFF - a.first_action_utc) / DAY if TO_CUTOFF else T   # end of follow-up, days
     p = pg.get_group(k) if k in pg.groups else posts.iloc[:0]
     c = cg.get_group(k) if k in cg.groups else coms.iloc[:0]
     r = rg.get_group(k) if k in rg.groups else rep.iloc[:0]
     q = rcg.get_group(k) if k in rcg.groups else rc.iloc[:0]
     it = ig.get_group(k) if k in ig.groups else inter.iloc[:0]
+    # change points: every action, edit and received reply, each + WIN (leaves the window), T, and whole days
     times = np.r_[p.t, c.t, p.edit_t.dropna(), c.edit_t.dropna(), r.t, q.t]
     pts = np.r_[0.0, T, times, times + WIN, np.arange(1, np.ceil(end))]
     act = pd.concat([p[['thread', 't', 'group', 'subreddit']], c[['thread', 't', 'group', 'subreddit']]])
     if len(act):                                  # thread-block ends also change the thread counts
         pts = np.r_[pts, act.groupby('thread').t.max().to_numpy() + WIN]
-    grid = np.unique(pts[(pts >= 0) & (pts < end)])
+    grid = np.unique(pts[(pts >= 0) & (pts < end)])         # episode starts; covariates below are evaluated here
     after = grid >= T
     f = {'id': np.repeat(k, len(grid)), 'start': grid, 'stop': np.r_[grid[1:], end],
          'event': (np.r_[grid[1:], end] == T).astype(float), 'after': after.astype(float)}
     for gname in GROUPS:
         f[f'thr_{gname}'] = thread_active(act[act.group == gname], grid)
-    tot = np.zeros(len(grid)); mx = np.zeros(len(grid))
+    tot = np.zeros(len(grid)); mx = np.zeros(len(grid))     # active threads: total, and in the busiest subreddit
     for _, s in act.groupby('subreddit'):
         w = thread_active(s, grid); tot += w; mx = np.maximum(mx, w)
     f['flooding'] = rules.flooding(mx, tot)
@@ -220,14 +256,14 @@ for k, a in acc.iterrows():
     f['visual_media'] = window(np.r_[p.t[p.visual], c.t[c.visual]], grid)
     f['crossposts'] = window(p.t[p.crosspost], grid)
     f['nsfw_outside'] = window(p.t[p.nsfw_outside], grid)
-    f['edits'] = window(np.r_[p.edit_t.dropna(), c.edit_t.dropna()], grid)
+    f['edits'] = window(np.r_[p.edit_t.dropna(), c.edit_t.dropna()], grid)   # dated at the edit, not the item
     f['down_posts'] = window(p.t[p.down], grid)
     f['down_comments'] = window(c.t[c.down], grid)
     f['popular_posts'] = window(p.t[p.popular], grid)
     f['popular_comments'] = window(c.t[c.popular], grid)
     f['replies_on_posts'] = window(r.t, grid)
-    f['has_posted'] = (grid >= (p.t.min() if len(p) else np.inf)).astype(float)
-    f['has_commented'] = (grid >= (c.t.min() if len(c) else np.inf)).astype(float)
+    f['has_posted'] = (grid >= (p.t.min() if len(p) else np.inf)).astype(float)       # so far
+    f['has_commented'] = (grid >= (c.t.min() if len(c) else np.inf)).astype(float)    # so far
     # v3 variables
     f['burstiness'] = F.burstiness(p.t, grid)
     f['burstiness_threads'] = F.burstiness(F.thread_entries(c), grid)
@@ -235,17 +271,17 @@ for k, a in acc.iterrows():
     f['n_comments_7d'] = window(c.t, grid)
     f['n_entries_7d'] = window(F.thread_entries(c), grid)
     at = np.sort(np.r_[p.t, c.t])
-    f['return_gap'] = F.window_max(at, np.r_[0.0, np.diff(at)], grid)
+    f['return_gap'] = F.window_max(at, np.r_[0.0, np.diff(at)], grid)   # days since the previous item, max in window
     f['chars_title'] = F.window_mean(p.t, p.chars_title, grid)
     f['chars_body'] = F.window_mean(p.t[p.self], p.chars_body[p.self], grid)
     f['n_selfposts_7d'] = window(p.t[p.self], grid)
-    ev = np.r_[p.t, F.thread_entries(c)]
+    ev = np.r_[p.t, F.thread_entries(c)]                    # v8: posts and comment-thread entries together
     f['burstiness_all'] = F.burstiness_kimjo(ev, grid)
     f['n_burst_7d'] = window(ev, grid)
     f['shared_text'] = window(np.r_[p.t[p.shared], c.t[c.shared]], grid)
     f['thread_turns'] = F.window_max(c.t, c.turns, grid)
-    f['has_edited'], f['edit_delay'] = F.edit_timing(np.r_[p.edit_t, c.edit_t], np.r_[p.t, c.t], grid)
-    f['pace_posts'] = F.median_gap(*F.consecutive(p.t), grid)
+    f['has_edited'], f['edit_delay'] = F.edit_timing(np.r_[p.edit_t, c.edit_t], np.r_[p.t, c.t], grid)   # so far
+    f['pace_posts'] = F.median_gap(*F.consecutive(p.t), grid)      # log(1 + hours); log(169) when no gap
     f['pace_comments'] = F.median_gap(*F.consecutive(c.t), grid)
     f['hopping'] = F.median_gap(*F.hopping_pairs(c), grid)
     f['self_repeats'] = window(np.r_[p.t[p.self_repeat], c.t[c.self_repeat]], grid)
@@ -253,13 +289,13 @@ for k, a in acc.iterrows():
     f['chars_comments'] = F.window_mean(c.t, c.chars, grid)
     f['promo_out_of_place'] = window(np.r_[p.t[p.promo_out], c.t[c.promo_out]], grid)
     f['repeat_partners'] = F.repeat_partners(it.t.to_numpy(), it.partner.to_numpy(), grid)
-    f['cross_sub_partners'] = F.cross_sub_partners(it.t.to_numpy(), it.partner.to_numpy(), it['sub'].to_numpy(), grid)
+    f['cross_sub_partners'] = F.cross_sub_partners(it.t.to_numpy(), it.partner.to_numpy(), it['sub'].to_numpy(), grid)   # so far
     f['copied'] = window(c.t[c.copied], grid)
     f['replies_on_comments'] = window(q.t, grid)
     f['removed_posts'] = window(p.t[p.removed_mod], grid)
     f['removed_comments'] = window(c.t[c.removed_now], grid)
     cal = a.first_action_utc + np.floor(grid) * DAY             # TFA control stays a daily calendar measure
-    f['tfa_posts_30d'] = np.searchsorted(tfa, cal) - np.searchsorted(tfa, cal - 30 * DAY)
+    f['tfa_posts_30d'] = np.searchsorted(tfa, cal) - np.searchsorted(tfa, cal - 30 * DAY)   # TFA posts in [cal - 30 d, cal)
     rows.append(pd.DataFrame(f))
 ex = pd.concat(rows, ignore_index=True)
 print(f'episodes {len(ex)}  accounts {ex.id.nunique()}  {time.time() - t0:.0f}s', flush=True)

@@ -1,3 +1,11 @@
+"""Test fit of the time-varying AFT model on the daily pilot data: four baselines compared by AIC, plus VIF.
+
+Part of the superseded 9 Oct 2026 pilot test fit (replaced by ../aft_model/); kept for the record.
+Counts enter as log(1 + count); start year enters as indicators (2015 or earlier pooled, 2020 = reference). Every
+account was accused, so all subjects have event = 1 (no censoring in the daily data). Robust (account-clustered) SEs.
+Inputs: daily.parquet (from build.py), sample_accounts.parquet. Outputs: vif.csv and summary_<dist>.csv next to this
+script (coefficients; time_ratio = exp(coef)). Run: python fit.py. plots.py execs the setup part of this file (up to
+the baseline loop)."""
 import os, sys, time
 import numpy as np
 import pandas as pd
@@ -25,6 +33,7 @@ for y in YEARS:
 COVS = COUNTS + ['flooding', 'has_posted', 'has_commented', 'username_digits'] + [f'start_{y}' for y in YEARS if y != REF]
 
 # merge consecutive days with identical covariates
+# (a new episode starts when any covariate or the account changes; the likelihood is the same, the fit is faster)
 same = (daily[COVS].ne(daily[COVS].shift()).any(axis=1) | daily['id'].ne(daily['id'].shift())).cumsum()
 ep = daily.groupby(same).agg(id=('id', 'first'), start=('start', 'first'), stop=('stop', 'last'),
                              **{c: (c, 'first') for c in COVS}).reset_index(drop=True)
@@ -35,6 +44,7 @@ print(f'episodes {len(ep)} (from {len(daily)} days), subjects {len(subjects)}')
 print(year.groupby(daily['id']).first().value_counts().sort_index().to_dict())
 
 # VIF on duration-weighted data
+# (each episode weighted by its length; VIF = diagonal of the inverse weighted correlation matrix)
 w = (ep.stop - ep.start).to_numpy()
 X = ep[COVS].to_numpy(float)
 m = (w[:, None] * X).sum(0) / w.sum()

@@ -2,6 +2,11 @@
 1-year window (rules.in_window: first action >= 1 year before the cutoff, accused within a year) -> 757 accounts.
 9 Oct covariate set, Weibull, exact time, robust (sandwich) SEs.
 
+Inputs: aft_model_output/exact_v2_to_cutoff.parquet (via fit_truncation.prep) and
+sample_998_v4_excl_output/sample_accounts.parquet. Each pickle holds cfg, covariates, summary, loglik, AIC, params,
+cov, n_status (account status counts), n_by_year (accounts per start year), F_H for the corrected job and calibration
+for the main jobs. checks/summarise_main.py tabulates them. calibration() is also used by fit_full.py.
+
 Jobs (python fit_main.py <job>; each writes aft_model_output/fit_main_<job>.pkl, never overwritten):
   main             the model
   main_bands       + six age-band indicators (1/7/30/180/365 days; the 730+ band is empty in a 1-year window)
@@ -27,29 +32,39 @@ from tvaft import TimeVaryingAFT
 import tvaft
 
 SOURCE = 'exact_v2_to_cutoff.parquet'
+# H: horizon in days; bands: add age bands; path: after-T path for the truncation correction (fit_truncation.path);
+# years: keep only these start years; ref: reference start year
 JOBS = {'main': dict(H=365), 'main_bands': dict(H=365, bands=True), 'chk_typical': dict(H=365, path='typical'),
         'chk_le2020': dict(H=365, years=(2015, 2020)), 'chk_H730': dict(H=730), 'chk_early': dict(H=365, years=(2015, 2018), ref=2018)}
-CAL_EDGES = [0.25, 1, 2, 7, 14, 30, 90, 180, 365]
+CAL_EDGES = [0.25, 1, 2, 7, 14, 30, 90, 180, 365]   # account age in days at which observed and expected are compared
 
 
 def calibration(m, ex, covs):
-    """observed vs expected accusations in age intervals (Weibull): E(h) = sum_i Lambda0(Psi_i(min(h, T_i)))"""
+    """observed vs expected accusations in age intervals (Weibull): E(h) = sum_i Lambda0(Psi_i(min(h, T_i)))
+
+    m: fitted Weibull TimeVaryingAFT; ex: episodes (only after == 0 rows are used); covs: the fitted covariates, in
+    the order of m.params_. Psi_i is account i's accumulated clock (sum of exp(-x'beta) * episode length up to age h),
+    Lambda0 the baseline Weibull cumulative hazard exp((log Psi - mu) / sigma). Observed = accounts accused by age h.
+    Both are cumulative over CAL_EDGES and then differenced into intervals (0, 0.25], (0.25, 1], ...
+    Returns a DataFrame indexed by the interval's upper edge: observed, expected, O/E and the chi2 contribution.
+    """
     p = len(covs); beta, (mu, ls) = m.params_[:p], m.params_[p:p + 2]
     pre = ex[ex.after == 0]
     rate = np.exp(-pre[covs].to_numpy(float) @ beta)
-    T = pre.groupby('id').stop.max()
+    T = pre.groupby('id').stop.max()                   # time of accusation (every account in the sample is accused)
     rows = []
     for h in CAL_EDGES:
         mm = pre.start.to_numpy() < h
         psi = pd.Series(rate[mm] * (np.minimum(pre.stop.to_numpy()[mm], h) - pre.start.to_numpy()[mm])).groupby(pre.id.to_numpy()[mm]).sum()
         rows.append({'by_day': h, 'observed': int((T <= h).sum()), 'expected': float(np.exp((np.log(psi) - mu) / np.exp(ls)).sum())})
-    c = pd.DataFrame(rows).set_index('by_day'); iv = c.diff().fillna(c)
+    c = pd.DataFrame(rows).set_index('by_day'); iv = c.diff().fillna(c)   # cumulative -> per interval
     iv['O/E'] = iv.observed / iv.expected
     iv['chi2'] = (iv.observed - iv.expected) ** 2 / iv.expected
     return iv
 
 
 def run(job):
+    """Fit one job (see JOBS) and pickle it to aft_model_output/fit_main_<job>.pkl."""
     cfg = JOBS[job]
     out_path = os.path.join(FT.OUT, f'fit_main_{job}.pkl')
     assert not os.path.exists(out_path), f'exists, not overwritten: {out_path}'
@@ -60,11 +75,13 @@ def run(job):
     if 'years' in cfg:
         ex = ex[ex.start_year.between(*cfg['years'])]
     ref = cfg.get('ref', FT.REF)
+    # constant columns (e.g. a start year with no accounts left) are not identified
     covs = [c for c in FT.covariates(ex, ref, cfg.get('bands', False)) if ex.loc[ex.after == 0, c].std() > 0]
     subj = ex[ex.after == 0].groupby('id', sort=False)['event'].last().to_frame()
     m = TimeVaryingAFT('weibull').fit(ex.loc[ex.after == 0, ['id', 'start', 'stop'] + covs], subj, covs, robust=True)
     out = {'name': job, 'cfg': cfg, 'covariates': covs}
     if cfg.get('path'):
+        # truncation-corrected refit started from the plain fit; keeps after-T rows of positive length only
         e = FT.path(ex, cfg['path'])
         e = e[(e.after == 0) | (e.stop > e.start)]
         m0 = m

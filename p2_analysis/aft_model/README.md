@@ -10,7 +10,7 @@ to overwrite an existing output.
 | `build.py` | exact-time covariates for the 9 Oct variable subset with the rules → `exact_v1.parquet` (991 accounts) |
 | `fit_v1.py` | Weibull refit on `exact_v1` and on the 9 Oct build for the same 991 accounts → `fit_v1.pkl`, `fit_v1_compare.csv` |
 | `checks/visual_rule_counts.py` | pilot link counts under the old host rule vs the render rule |
-| `links.py` | link table for any posts/comments, same as `Link_domains_v1` (reproduces its pre-accusation table exactly) |
+| `links.py` | link table for any posts/comments, same as `link_domain_types_v1` (reproduces its pre-accusation table exactly) |
 | `build.py --to-cutoff` | continues each account past its accusation to 2022-11-30 with archived behaviour → `exact_v1_to_cutoff.parquet` (rows before the accusation identical to `exact_v1`) |
 | `truncation.py` | `TruncatedAFT`: likelihood conditioned on T ≤ τ (Lagakos et al. 1988), path after T supplied as episodes |
 | `checks/truncation_unit.py` | simulation: per-account log-likelihood matches scipy to 1e-10; corrected fit recovers the truth, uncorrected does not |

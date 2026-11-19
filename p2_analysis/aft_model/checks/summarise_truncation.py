@@ -1,4 +1,9 @@
-"""Time ratios of every truncation fit side by side -> aft_model_output/truncation_summary.csv (refuses to overwrite)."""
+"""Time ratios of every truncation fit side by side -> aft_model_output/truncation_summary.csv (refuses to overwrite).
+
+Run: python checks/summarise_truncation.py. Reads aft_model_output/fit_truncation.pkl (not fit_truncation_v2.pkl,
+which the current fit_truncation.py writes) and every fit_horizon_*.pkl. Fits that failed (no summary) are skipped; the truncation jobs are labelled all991_<job>.
+Also writes truncation_summary_fits.csv: n, loglik, convergence and the median F(tau) / F(H) of each corrected fit.
+"""
 import os, glob, pickle
 import pandas as pd
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'aft_model_output')
@@ -12,6 +17,7 @@ cols = {}
 for k, r in fits.items():
     cols[(k, 'TR')] = r['summary']['time_ratio']; cols[(k, 'se')] = r['summary']['se']; cols[(k, 'p')] = r['summary']['p']
 tab = pd.DataFrame(cols)
+# median F: the corrected fits' median probability of accusation by tau (truncation fits) or H (horizon fits)
 info = pd.DataFrame({k: {'n': r['n'], 'loglik': r['loglik'], 'converged': r['conv'],
                          'median_F': (r.get('F_tau', r.get('F_H')).median() if ('F_tau' in r or 'F_H' in r) else None)}
                      for k, r in fits.items()}).T

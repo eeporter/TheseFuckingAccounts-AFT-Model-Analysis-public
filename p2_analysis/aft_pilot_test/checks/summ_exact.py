@@ -1,22 +1,31 @@
+"""Summary of the exact-time diagnostics in exact_diag.pkl (parallel_exact.py), against the M2_exact_any fit.
+
+Part of the superseded 9 Oct 2026 pilot test fit (replaced by ../../aft_model/); kept for the record.
+Prints: failed and non-converged tasks; LR tests for the covariate x log t interactions (all at once, then one at a
+time with Holm-adjusted p); functional-form LR tests; the status-split LR test; the simulated KS distribution.
+Inputs (relative paths): exact_diag.pkl, exact_fits.pkl, quick_exact.pkl. Output: printed only.
+Run from checks/: python summ_exact.py."""
 import pickle, numpy as np, pandas as pd
 from scipy import stats
 from statsmodels.stats.multitest import multipletests
 pd.set_option('display.width', 200)
 R = pickle.load(open('exact_diag.pkl', 'rb'))
 F = {r['name']: r for r in pickle.load(open('exact_fits.pkl', 'rb'))}
-M2 = F['M2_exact_any']; ll0 = M2['loglik']
+M2 = F['M2_exact_any']; ll0 = M2['loglik']          # null model for every LR test below
 err = [r for r in R if 'error' in r]; print('errors', len(err), err[:3])
 nc = [ (r['job'], r.get('cov', r.get('seed', r.get('group')))) for r in R if 'conv' in r and not r['conv']]; print('not converged', nc)
 tv = [r for r in R if r['job'] == 'tv' and 'error' not in r]
 a = [r for r in tv if r['cov'] == 'ALL'][0]; df = a['k'] - len(M2['params'])
 print('tv ALL LR', round(2*(a['loglik']-ll0),1), 'df', df, 'p', stats.chi2.sf(2*(a['loglik']-ll0), df))
 t = pd.DataFrame([r for r in tv if r['cov'] != 'ALL']).set_index('cov')
+# LR clipped at 0 in case a refit ends slightly below the M2 log-likelihood
 t['LR'] = 2*(t.loglik-ll0); t['p'] = stats.chi2.sf(t.LR.clip(lower=0), 1); t['holm'] = multipletests(t.p, method='holm')[1]
 t['z'] = t.inter/t.inter_se
 print(t.sort_values('p')[['main','inter','inter_se','z','LR','p','holm']].head(12).round(4).to_string())
 ff = pd.DataFrame([r for r in R if r['job'] == 'ff' and 'error' not in r])
 ff['LR'] = 2*(ff.loglik-ll0); ff['p'] = stats.chi2.sf(ff.LR.clip(lower=0), 1); ff['holm'] = multipletests(ff.p, method='holm')[1]
 print(ff.sort_values('p')[['cov','kind','extra','extra_se','LR','p','holm']].head(12).round(4).to_string())
+# status split: separate suspended and active fits (2k parameters) vs pooled M2 (k parameters) -> df = k
 st = {r['group']: r for r in R if r['job'] == 'status'}
 LR = 2*(st['suspended']['loglik']+st['active']['loglik']-ll0); k = len(M2['params'])
 print('status LR', round(LR,1), 'df', k, 'p', stats.chi2.sf(LR, k))
