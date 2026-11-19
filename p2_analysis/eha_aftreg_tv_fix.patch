@@ -1,0 +1,20 @@
+--- a/src/aftreg.c
++++ b/src/aftreg.c
+@@ -109,7 +109,7 @@
+ 	b_time = ex->time[rec] * exp(-alphambz); /* shape!  */
+ 	if (ex->ind[rec]){ 
+ 	    res1 += log(gamma) - alphambz + 
+-		(gamma - 1) * (log(ex->time[rec]) - alphambz) +
++		(gamma - 1) * log(b_time) +
+ 		log(h0(R_pow(b_time, gamma)));
+ 	}
+ 	res2 += S0(R_pow(a_time, gamma), log_p) - 
+@@ -127,7 +127,7 @@
+ 		    (ex->time[rec] - ex->time0[rec]) * exp(-alphambz);
+ 		if (ex->ind[rec]){ 
+ 		    res1 += log(gamma) - alphambz + 
+-			(gamma - 1) * (log(ex->time[rec]) - alphambz) +
++			(gamma - 1) * log(b_time) +
+ 			log(h0(R_pow(b_time, gamma)));
+ 		}
+ 		res2 += S0(R_pow(a_time, gamma), log_p) - 

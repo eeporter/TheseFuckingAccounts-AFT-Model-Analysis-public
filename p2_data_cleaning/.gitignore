@@ -1,0 +1,5 @@
+__pycache__/
+# Run logs and generated review artifacts - regenerable, not source
+*.log
+*.html
+collection_logs/

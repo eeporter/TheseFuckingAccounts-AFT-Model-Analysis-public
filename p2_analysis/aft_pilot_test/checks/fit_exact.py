@@ -1,0 +1,33 @@
+import pickle, time
+from multiprocessing import Pool
+from common_exact import *
+ex, acc, COVS, SUBJ = load_exact()
+COVS2 = COVS + [f'any_{c}' for c in ANY]
+ALL = list(SUBJ.index)
+MODELS = {
+    'M1_exact': (COVS, ALL, 'weibull'),
+    'M2_exact_any': (COVS2, ALL, 'weibull'),
+    'M1_drop7': (COVS, [k for k in ALL if k not in CENSORED], 'weibull'),
+    'M2_lognormal': (COVS2, ALL, 'lognormal'),
+    'M2_gengamma': (COVS2, ALL, 'gengamma'),
+}
+
+
+def one(name):
+    covs, ids, dist = MODELS[name]
+    e, s = sub(ex, SUBJ, ids)
+    t = time.time()
+    m = fit(e[['id', 'start', 'stop'] + covs], covs, dist=dist, subjects=s)
+    out = {'name': name, 'summary': m.summary, 'loglik': m.loglik_, 'AIC': m.AIC_, 'conv': m.converged_, 'secs': time.time() - t,
+           'n': m.n_subjects_, 'events': int(s.event.sum()), 'params': m.params_, 'cov': m.cov_, 'cov_model': m.cov_model_, 'fallback': list(FALLBACKS)}
+    if name.startswith('M2_exact'):
+        out['r'] = cox_snell(m); out['ids'] = m.ids_
+    print(name, round(m.loglik_, 2), round(time.time() - t), 's', flush=True)
+    return out
+
+
+if __name__ == '__main__':
+    with Pool(5) as pool:
+        res = pool.map(one, list(MODELS), chunksize=1)
+    pickle.dump(res, open(os.path.join(HERE, 'exact_fits.pkl'), 'wb'))
+    print('done')
